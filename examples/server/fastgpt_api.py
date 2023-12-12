@@ -242,6 +242,7 @@ app = FastAPI()
 #                     yield 'data: {}\n\n'.format(json.dumps(resData))
 #         return StreamingResponse(generate(), media_type='text/event-stream')
 
+@app.post("/v1")
 @app.post("/chat/completions")
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request, body: ChatCompletionBody):
@@ -275,40 +276,40 @@ async def chat_completions(request: Request, body: ChatCompletionBody):
         return StreamingResponse(generate(), media_type='text/event-stream')
 
 
-@app.route('/completions', methods=['POST', 'OPTIONS'])
-@app.route('/v1/completions', methods=['POST', 'OPTIONS'])
-def completion():
-    if (args.api_key != "" and request.headers["Authorization"].split()[1] != args.api_key):
-        return Response(status=403)
-    if request.method == 'OPTIONS':
-        return Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
-    body = request.get_json()
-    stream = False
-    tokenize = False
-    if(is_present(body, "stream")): stream = body["stream"]
-    if(is_present(body, "tokenize")): tokenize = body["tokenize"]
-    postData = make_postData(body, chat=False, stream=stream)
+# @app.route('/completions', methods=['POST', 'OPTIONS'])
+# @app.route('/v1/completions', methods=['POST', 'OPTIONS'])
+# def completion():
+#     if (args.api_key != "" and request.headers["Authorization"].split()[1] != args.api_key):
+#         return Response(status=403)
+#     if request.method == 'OPTIONS':
+#         return Response(headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+#     body = request.get_json()
+#     stream = False
+#     tokenize = False
+#     if(is_present(body, "stream")): stream = body["stream"]
+#     if(is_present(body, "tokenize")): tokenize = body["tokenize"]
+#     postData = make_postData(body, chat=False, stream=stream)
 
-    promptToken = []
-    if (tokenize):
-        tokenData = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/tokenize"), data=json.dumps({"content": postData["prompt"]})).json()
-        promptToken = tokenData["tokens"]
+#     promptToken = []
+#     if (tokenize):
+#         tokenData = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/tokenize"), data=json.dumps({"content": postData["prompt"]})).json()
+#         promptToken = tokenData["tokens"]
 
-    if (not stream):
-        data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData))
-        print(data.json())
-        resData = make_resData(data.json(), chat=False, promptToken=promptToken)
-        return jsonify(resData)
-    else:
-        def generate():
-            data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData), stream=True)
-            time_now = int(time.time())
-            for line in data.iter_lines():
-                if line:
-                    decoded_line = line.decode('utf-8')
-                    resData = make_resData_stream(json.loads(decoded_line[6:]), chat=False, time_now=time_now)
-                    yield 'data: {}\n\n'.format(json.dumps(resData))
-        return Response(generate(), mimetype='text/event-stream', headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
+#     if (not stream):
+#         data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData))
+#         print(data.json())
+#         resData = make_resData(data.json(), chat=False, promptToken=promptToken)
+#         return jsonify(resData)
+#     else:
+#         def generate():
+#             data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData), stream=True)
+#             time_now = int(time.time())
+#             for line in data.iter_lines():
+#                 if line:
+#                     decoded_line = line.decode('utf-8')
+#                     resData = make_resData_stream(json.loads(decoded_line[6:]), chat=False, time_now=time_now)
+#                     yield 'data: {}\n\n'.format(json.dumps(resData))
+#         return Response(generate(), mimetype='text/event-stream', headers={"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*"})
 
 
 class EmbeddingRequest(BaseModel):
