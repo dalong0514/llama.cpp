@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 import uvicorn
-
+import codecs
 
 app = Flask(__name__)
 slot_id = -1
@@ -252,25 +252,27 @@ async def chat_completions(request: Request, body: ChatCompletionBody):
     tokenize = body.tokenize
     postData = make_postData(body.model_dump(), chat=True, stream=stream)
 
+    headers = {'Accept-Charset': 'UTF-8'}
+
     promptToken = []
     if (tokenize):
-        tokenData = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/tokenize"), data=json.dumps({"content": postData["prompt"]})).json()
+        tokenData = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/tokenize"), data=json.dumps({"content": postData["prompt"]}), headers=headers).json()
         promptToken = tokenData["tokens"]
 
     if (not stream):
-        data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData))
+        data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData), headers=headers)
         print(data.json())
         resData = make_resData(data.json(), chat=True, promptToken=promptToken)
         return JSONResponse(content=resData)
     else:
         def generate():
-            data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData), stream=True)
+            data = requests.request("POST", urllib.parse.urljoin(args.llama_api, "/completion"), data=json.dumps(postData), headers=headers, stream=True)
             time_now = int(time.time())
             resData = make_resData_stream({}, chat=True, time_now=time_now, start=True)
             yield 'data: {}\n\n'.format(json.dumps(resData))
             for line in data.iter_lines():
                 if line:
-                    decoded_line = line.decode('utf-8')
+                    decoded_line = codecs.decode(line, 'utf-8', 'ignore')
                     resData = make_resData_stream(json.loads(decoded_line[6:]), chat=True, time_now=time_now)
                     yield 'data: {}\n\n'.format(json.dumps(resData))
         return StreamingResponse(generate(), media_type='text/event-stream')
