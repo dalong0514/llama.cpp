@@ -167,6 +167,34 @@ static T json_value(const json &body, const std::string &key, const T &default_v
         : default_value;
 }
 
+inline std::string format_llama2(std::vector<json> messages)
+{
+    std::ostringstream output;
+    bool is_inside_turn = false;
+
+    for (auto it = messages.begin(); it != messages.end(); ++it) {
+        if (!is_inside_turn) {
+            output << "[INST] ";
+        }
+        std::string role    = json_value(*it, "role", std::string("user"));
+        std::string content = json_value(*it, "content", std::string(""));
+        if (role == "system") {
+            output << "<<SYS>>\n" << content << "\n<<SYS>>\n\n";
+            is_inside_turn = true;
+        } else if (role == "user") {
+            output << content << " [/INST]";
+            is_inside_turn = true;
+        } else {
+            output << " " << content << " </s>";
+            is_inside_turn = false;
+        }
+    }
+
+    LOG_VERBOSE("format_llama2", {{"text", output.str()}});
+
+    return output.str();
+}
+
 inline std::string format_chatml(std::vector<json> messages)
 {
     std::ostringstream chatml_msgs;
@@ -180,6 +208,8 @@ inline std::string format_chatml(std::vector<json> messages)
 
     chatml_msgs << "<|im_start|>assistant" << '\n';
 
+    LOG_VERBOSE("format_chatml", {{"text", chatml_msgs.str()}});
+
     return chatml_msgs.str();
 }
 
@@ -190,6 +220,7 @@ inline std::string format_chatml(std::vector<json> messages)
 struct llama_server_queue {
     int id = 0;
     std::mutex mutex_tasks;
+    bool running;
     // queues
     std::vector<task_server> queue_tasks;
     std::vector<task_server> queue_tasks_deferred;
@@ -248,9 +279,18 @@ struct llama_server_queue {
         queue_tasks_deferred.clear();
     }
 
-    // Start the main loop. This call is blocking
-    [[noreturn]]
+    // end the start_loop routine
+    void terminate() {
+        {
+            std::unique_lock<std::mutex> lock(mutex_tasks);
+            running = false;
+        }
+        condition_tasks.notify_all();
+    }
+
+    // Start the main loop.
     void start_loop() {
+        running = true;
         while (true) {
             // new task arrived
             LOG_VERBOSE("have new task", {});
@@ -294,8 +334,12 @@ struct llama_server_queue {
             {
                 std::unique_lock<std::mutex> lock(mutex_tasks);
                 if (queue_tasks.empty()) {
+                    if (!running) {
+                        LOG_VERBOSE("ending start_loop", {});
+                        return;
+                    }
                     condition_tasks.wait(lock, [&]{
-                        return !queue_tasks.empty();
+                        return (!queue_tasks.empty() || !running);
                     });
                 }
             }
